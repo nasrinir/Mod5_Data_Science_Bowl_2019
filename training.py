@@ -52,8 +52,8 @@ def XGBOOST_param_selection(X_train, y_train, nfolds, n_jobs = None):
 #     # Method of selecting samples for training each tree
 #     bootstrap = [True, False]
 #     # Create the random grid
-    
-    params = {
+    # A parameter grid for XGBoost
+    pars = {
         'colsample_bytree': 0.8,                 
         'learning_rate': 0.08,
         'max_depth': 10,
@@ -65,20 +65,15 @@ def XGBOOST_param_selection(X_train, y_train, nfolds, n_jobs = None):
         'gamma':0.25,
         'n_estimators':500
     }
+    xgb_model = xgb.train(pars,
+                      xgb_train,
+                      num_boost_round=1000,
+                      evals=[(xgb_train, 'train'), (xgb_eval, 'val')],
+                      verbose_eval=False,
+                      early_stopping_rounds=20
+                     )
 
 
-    skf = StratifiedKFold(n_splits=nfolds, 
-                          shuffle=True, 
-                          random_state=1985)
-    
-    grid_search = RandomizedSearchCV(estimator = xgb(),
-                                     param_distributions = params,
-                                     cv = skf, 
-                                     #scoring = 'roc_auc',
-                                     n_jobs = n_jobs).fit(X_train, y_train)
-    print('The training roc_auc_score is:', round(grid_search.best_score_, 3))
-    print('The best parameters are:', grid_search.best_params_)
-    best_model = grid_search.best_estimator_
     return best_model
 
 
@@ -135,14 +130,13 @@ def random_forest_param_selection(X_train, y_train, nfolds, n_jobs = None):
     grid_search = RandomizedSearchCV(estimator = RandomForestClassifier(),
                                      param_distributions = params,
                                      cv = skf, 
-                                     scoring = 'roc_auc',
                                      n_jobs = n_jobs).fit(X_train, y_train)
     print('The training roc_auc_score is:', round(grid_search.best_score_, 3))
     print('The best parameters are:', grid_search.best_params_)
     best_model = grid_search.best_estimator_
     return best_model
 
-def Convert_LabelEncoder(X_train, X_test):
+def Convert_LabelEncoder(X_train, X_test, encoding_col_names):
     '''
     encode categorical features using 
     a one-hot or ordinal encoding scheme.
@@ -154,6 +148,8 @@ def Convert_LabelEncoder(X_train, X_test):
         
         X_test      (pandas DataFrame)  test dataframe
         
+        encoding_col_names   (List) the names of columns needed to be encoded
+        
         
     Returns
     -------
@@ -161,11 +157,15 @@ def Convert_LabelEncoder(X_train, X_test):
         X_test      (pandas DataFrame) test dataframe with one-hot encoding
         
     '''
-    #concat X_train and X_test
-    for col in X_train.columns:
-        if X_train[col].dtype == 'object':
-            le = LabelEncoder()
-            le.fit(list(X_train[col].astype(str).values) + list(X_test[col].astype(str).values))
-            X_train[col] = le.transform(list(X_train[col].astype(str).values))
-            X_test[col] = le.transform(list(X_test[col].astype(str).values))
-    return X_train, X_test
+    X_train['train'] = 1
+    X_test['train'] = 0
+    final=pd.concat([X_train,X_test])
+    for col in encoding_col_names:
+        lb=LabelEncoder()
+        lb.fit(final[col].astype(str).values)
+        final[col]=lb.transform(final[col].astype(str).values)
+    final_train = final.loc[final['train'] == 1]
+    final_train.drop('train', axis = 1, inplace = True)
+    final_test = final.loc[final['train'] == 0]
+    final_test.drop('train', axis = 1, inplace = True)
+    return final_train, final_test
