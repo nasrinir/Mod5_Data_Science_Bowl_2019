@@ -13,6 +13,11 @@ from sklearn.ensemble import RandomForestClassifier
 import numpy as np
 from sklearn.utils import resample
 from imblearn.over_sampling import SMOTE
+import xgboost as xgb
+from xgboost import XGBClassifier
+from xgboost import plot_importance
+from matplotlib import pyplot
+from sklearn.metrics import cohen_kappa_score, make_scorer, confusion_matrix
 
 def XGBOOST_param_selection(X_train, y_train, nfolds, n_jobs = None):
     '''
@@ -129,7 +134,8 @@ def random_forest_param_selection(X_train, y_train, nfolds, n_jobs = None):
     
     grid_search = RandomizedSearchCV(estimator = RandomForestClassifier(),
                                      param_distributions = params,
-                                     cv = skf, 
+                                     cv = skf,
+                                     scoring = make_scorer(cohen_kappa_score),
                                      n_jobs = n_jobs).fit(X_train, y_train)
     print('The training roc_auc_score is:', round(grid_search.best_score_, 3))
     print('The best parameters are:', grid_search.best_params_)
@@ -169,3 +175,34 @@ def Convert_LabelEncoder(X_train, X_test, encoding_col_names):
     final_test = final.loc[final['train'] == 0]
     final_test.drop('train', axis = 1, inplace = True)
     return final_train, final_test
+
+# this function is the quadratic weighted kappa (the metric used for the competition submission)
+def qwk(act,pred,n=4,hist_range=(0,3)):
+    
+    # Calculate the percent each class was tagged each label
+    O = confusion_matrix(act,pred)
+    # normalize to sum 1
+    O = np.divide(O,np.sum(O))
+    
+    # create a new matrix of zeroes that match the size of the confusion matrix
+    # this matriz looks as a weight matrix that give more weight to the corrects
+    W = np.zeros((n,n))
+    for i in range(n):
+        for j in range(n):
+            # makes a weird matrix that is bigger in the corners top-right and botton-left (= 1)
+            W[i][j] = ((i-j)**2)/((n-1)**2)
+            
+    # make two histograms of the categories real X prediction
+    act_hist = np.histogram(act,bins=n,range=hist_range)[0]
+    prd_hist = np.histogram(pred,bins=n,range=hist_range)[0]
+    
+    # multiply the two histograms using outer product
+    E = np.outer(act_hist,prd_hist)
+    E = np.divide(E,np.sum(E)) # normalize to sum 1
+    
+    # apply the weights to the confusion matrix
+    num = np.sum(np.multiply(W,O))
+    # apply the weights to the histograms
+    den = np.sum(np.multiply(W,E))
+    
+    return 1-np.divide(num,den)
